@@ -70,32 +70,6 @@ export class AuthBase1733756400000 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE TABLE subscriptions (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-          stripe_customer_id TEXT,
-          stripe_subscription_id TEXT,
-          plan TEXT NOT NULL,
-          ocr_credits INT DEFAULT 0,
-          renews_at TIMESTAMP,
-          status TEXT CHECK (status IN ('active','past_due','canceled')),
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-      );
-    `);
-
-    await queryRunner.query(`
-      CREATE TABLE api_keys (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-          name TEXT NOT NULL,
-          hashed_key TEXT NOT NULL,
-          last_used_at TIMESTAMP,
-          created_at TIMESTAMP DEFAULT NOW()
-      );
-    `);
-
-    await queryRunner.query(`
       CREATE TABLE audit_logs (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
