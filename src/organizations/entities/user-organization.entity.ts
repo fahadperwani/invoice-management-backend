@@ -1,16 +1,16 @@
 import {
   Entity,
-  PrimaryColumn,
   Column,
   Unique,
   CreateDateColumn,
   UpdateDateColumn,
+  PrimaryGeneratedColumn,
 } from 'typeorm';
 
 @Entity('user_organizations')
 @Unique(['userId', 'organizationId']) // Use property names, not column names
 export class UserOrganization {
-  @PrimaryColumn('uuid')
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
   // IMPORTANT: Matches column names and is not decorated as a relation here

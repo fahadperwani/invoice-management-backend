@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   InternalServerErrorException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { RegisterTenantDto } from './dto/register-tenant.dto';
@@ -14,11 +15,14 @@ import { UserOrganization } from '../organizations/entities/user-organization.en
 
 import bcrypt from 'bcryptjs';
 import slugify from 'slugify';
+import { LoginDto } from './dto/login.dto';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly dataSource: DataSource, // Inject DataSource for transactional control
+    private readonly jwtService: JwtService, // Inject JwtService for token generation
   ) {}
 
   async registerTenant(dto: RegisterTenantDto): Promise<any> {
@@ -39,13 +43,12 @@ export class AuthService {
       });
 
       // 3. Create User (Instance of the entity)
-      const newUser = queryRunner.manager.create(User, {
+      const newUser = await queryRunner.manager.save(User, {
         name: dto.userName,
         email: dto.email,
         passwordHash: passwordHash, // Note the camelCase property mapping
         emailVerified: true,
       });
-      await queryRunner.manager.save(newUser);
 
       // 4. Create Organization (Tenant Instance)
       const newOrg = queryRunner.manager.create(Organization, {
@@ -94,5 +97,58 @@ export class AuthService {
       // 8. Always release the query runner
       await queryRunner.release();
     }
+  }
+
+  async validateUser(email: string, pass: string): Promise<User> {
+    // 1. Fetch user by email (using queryRunner.manager or UserRepository)
+    const user = await this.dataSource.manager.findOneBy(User, { email });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials.');
+    }
+
+    // 2. Compare password hash
+    const isPasswordValid = await bcrypt.compare(pass, user.passwordHash);
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials.');
+    }
+
+    // Return the user object (excluding the hash)
+    return user;
+  }
+
+  async login(dto: LoginDto): Promise<{ accessToken: string; user: any }> {
+    const user = await this.validateUser(dto.email, dto.password);
+
+    // 1. Fetch ALL roles and organizations for the user
+    // This is critical for determining the JWT payload scope
+    const memberships = await this.dataSource.manager.find(UserOrganization, {
+      where: { userId: user.id, status: 'active' },
+    });
+
+    if (!memberships || memberships.length === 0) {
+      throw new UnauthorizedException(
+        'User is not an active member of any organization.',
+      );
+    }
+
+    // For simplicity, we'll use the *first* organization ID and role as the primary context
+    // In a production app, the user might select the active organization ID after login.
+    const primaryMembership = memberships[0];
+
+    // 2. Define the JWT Payload (The Identity & Scope)
+    const payload = {
+      sub: user.id, // Subject (User ID)
+      email: user.email,
+      orgId: primaryMembership.organizationId, // Tenant/Organization ID (CRITICAL for multi-tenancy)
+      role: primaryMembership.role, // User's role within that tenant
+    };
+
+    // 3. Generate the token
+    return {
+      accessToken: this.jwtService.sign(payload),
+      user: { id: user.id, email: user.email, name: user.name },
+    };
   }
 }
