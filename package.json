@@ -21,7 +21,9 @@
     "typeorm": "ts-node -r tsconfig-paths/register -r dotenv/config ./node_modules/typeorm/cli.js --dataSource src/core/database/typeorm.config.ts",
     "migration:generate": "yarn typeorm migration:generate src/migrations/NewMigrationName",
     "migration:run": "yarn typeorm migration:run",
-    "migration:revert": "yarn typeorm migration:revert"
+    "migration:revert": "yarn typeorm migration:revert",
+    "db:drop": "psql -U postgres -h localhost -p 5432 -c \"DROP DATABASE IF EXISTS ims;\"",
+    "db:create": "psql -U postgres -h localhost -p 5432 -c \"CREATE DATABASE ims;\""
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

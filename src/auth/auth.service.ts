@@ -1,31 +1,41 @@
 import {
-  Injectable,
   ConflictException,
+  Injectable,
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { RegisterTenantDto } from './dto/register-tenant.dto';
-
-// --- IMPORT YOUR ENTITIES ---
-// Ensure these paths match your file structure:
 import { User } from '../users/entities/user.entity';
 import { Organization } from '../organizations/entities/organization.entity';
 import { UserOrganization } from '../organizations/entities/user-organization.entity';
-
 import bcrypt from 'bcryptjs';
 import slugify from 'slugify';
 import { LoginDto } from './dto/login.dto';
 import { JwtService } from '@nestjs/jwt';
+import { Role } from 'src/organizations/entities/role.entity';
+import { RolePermission } from 'src/permissions/entities/role-permission.entity';
+import { Permission } from 'src/permissions/entities/permission.entity';
+import {
+  AuthTokenPayload,
+  AuthTokens,
+  AuthUser,
+  LoginResponse,
+  RegisterTenantResponse,
+} from './types/auth.types';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly dataSource: DataSource, // Inject DataSource for transactional control
-    private readonly jwtService: JwtService, // Inject JwtService for token generation
+    private readonly dataSource: DataSource,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
-  async registerTenant(dto: RegisterTenantDto): Promise<any> {
+  async registerTenant(
+    dto: RegisterTenantDto,
+  ): Promise<RegisterTenantResponse> {
     const queryRunner = this.dataSource.createQueryRunner();
 
     // 1. Establish connection and begin transaction
@@ -57,28 +67,43 @@ export class AuthService {
       });
       await queryRunner.manager.save(newOrg);
 
-      // 5. Create User-Organization Link (Assigning Admin Role)
+      const adminRole = await queryRunner.manager.save(Role, {
+        organizationId: newOrg.id,
+        name: 'Admin',
+        isSystemRole: true,
+      });
+
+      const allPermissions = await queryRunner.manager.find(Permission);
+
+      const rolePermissions = allPermissions.map((permission) =>
+        queryRunner.manager.create(RolePermission, {
+          roleId: adminRole.id,
+          permissionId: permission.id,
+        }),
+      );
+      await queryRunner.manager.save(rolePermissions);
+
       const membership = queryRunner.manager.create(UserOrganization, {
         userId: newUser.id,
         organizationId: newOrg.id,
-        role: 'admin', // Founding user is automatically the admin
         status: 'active',
       });
       await queryRunner.manager.save(membership);
 
-      // 6. Commit Transaction (All operations were successful)
       await queryRunner.commitTransaction();
 
-      // Return details needed for the response (without the password hash)
+      const user: AuthUser = {
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+      };
       return {
-        user: { id: newUser.id, email: newUser.email, name: newUser.name },
+        user,
         organization: { id: newOrg.id, name: newOrg.name, slug: newOrg.slug },
       };
     } catch (err) {
-      // 7. Rollback on Error (If any step failed, undo everything)
       await queryRunner.rollbackTransaction();
 
-      // Use a type guard to safely check for specific database errors
       if (err instanceof Error) {
         // Check for unique constraint violation error code (PostgreSQL standard is '23505')
         if ('code' in err && err.code === '23505') {
@@ -89,7 +114,6 @@ export class AuthService {
         }
       }
 
-      console.error('Tenant Registration Failed:', err);
       throw new InternalServerErrorException(
         'Failed to register the organization and user.',
       );
@@ -118,11 +142,30 @@ export class AuthService {
     return user;
   }
 
-  async login(dto: LoginDto): Promise<{ accessToken: string; user: any }> {
+  /**
+   * Helper function to generate both Access and Refresh tokens.
+   */
+  private generateTokens(payload: AuthTokenPayload): AuthTokens {
+    // 1. ACCESS TOKEN (Uses the JwtModule default config: JWT_ACCESS_SECRET)
+    const accessToken = this.jwtService.sign(payload); // No extra options needed, uses module defaults
+
+    // 2. REFRESH TOKEN (Overrides the default secret with JWT_REFRESH_SECRET)
+    const refreshToken = this.jwtService.sign(
+      { sub: payload.sub }, // Minimal payload: only the user ID (sub)
+      {
+        secret: this.configService.get('JWT_REFRESH_SECRET'), // <-- CORRECTLY OVERRIDES SECRET
+        expiresIn: '7d', // Longer expiration for refresh tokens
+      },
+    );
+
+    // TODO: Hash and store the Refresh Token in the 'sessions' table here!
+
+    return { accessToken, refreshToken };
+  }
+
+  async login(dto: LoginDto): Promise<LoginResponse> {
     const user = await this.validateUser(dto.email, dto.password);
 
-    // 1. Fetch ALL roles and organizations for the user
-    // This is critical for determining the JWT payload scope
     const memberships = await this.dataSource.manager.find(UserOrganization, {
       where: { userId: user.id, status: 'active' },
     });
@@ -133,22 +176,36 @@ export class AuthService {
       );
     }
 
-    // For simplicity, we'll use the *first* organization ID and role as the primary context
-    // In a production app, the user might select the active organization ID after login.
     const primaryMembership = memberships[0];
 
+    // 2. Fetch all permissions for this role
+    const permissionsRecords = await this.dataSource.manager.find(
+      RolePermission,
+      {
+        where: { roleId: primaryMembership.roleId },
+        relations: ['permission'], // Assuming you have relations set up
+      },
+    );
+
+    const permissions = permissionsRecords.map((rp) => rp.permission.name); // e.g., ['invoice:view', 'invoice:edit']
+
     // 2. Define the JWT Payload (The Identity & Scope)
-    const payload = {
+    const payload: AuthTokenPayload = {
       sub: user.id, // Subject (User ID)
       email: user.email,
       orgId: primaryMembership.organizationId, // Tenant/Organization ID (CRITICAL for multi-tenancy)
-      role: primaryMembership.role, // User's role within that tenant
+      permissions: permissions, // User permissions within the tenant
     };
 
+    const { accessToken, refreshToken } = this.generateTokens(payload);
+
     // 3. Generate the token
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: { id: user.id, email: user.email, name: user.name },
+    const authUser: AuthUser = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
     };
+
+    return { accessToken, refreshToken, user: authUser };
   }
 }

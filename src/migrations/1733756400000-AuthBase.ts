@@ -2,6 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AuthBase1733756400000 implements MigrationInterface {
   name = 'AuthBase1733756400000';
+  public readonly timestamp = 1733756400000;
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

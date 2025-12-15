@@ -25,7 +25,7 @@ import { JwtStrategy } from 'src/core/auth/jwt.strategy';
       inject: [ConfigService],
       // Use an async factory to load secrets safely from config
       useFactory: (configService: ConfigService) => {
-        const secret = configService.get<string>('JWT_SECRET');
+        const secret = configService.get<string>('ACCESS_TOKEN_SECRET');
 
         return {
           secret: secret || 'YOUR_SUPER_SECRET_FALLBACK',

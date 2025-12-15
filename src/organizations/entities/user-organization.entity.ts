@@ -5,7 +5,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   PrimaryGeneratedColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { Role } from './role.entity';
 
 @Entity('user_organizations')
 @Unique(['userId', 'organizationId']) // Use property names, not column names
@@ -23,12 +26,6 @@ export class UserOrganization {
 
   @Column({
     type: 'text',
-    // The role options are defined by your SQL CHECK constraint
-  })
-  role: 'admin' | 'manager' | 'staff' | 'viewer';
-
-  @Column({
-    type: 'text',
     // The status options are defined by your SQL CHECK constraint
   })
   status: 'invited' | 'active' | 'disabled';
@@ -38,4 +35,14 @@ export class UserOrganization {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
+  @Column({ name: 'role_id', nullable: true })
+  roleId: string;
+
+  // ----------------------------------------------------------------------
+  // NEW: Define the ManyToOne Relation to the Role entity
+  // ----------------------------------------------------------------------
+  @ManyToOne(() => Role)
+  @JoinColumn({ name: 'role_id' }) // Maps the 'role_id' column to the Role entity
+  role: Role; // This property is what TypeORM loads when relations: ['role'] is used
 }

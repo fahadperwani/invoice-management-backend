@@ -10,20 +10,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(), // Extract from 'Authorization: Bearer <token>'
       ignoreExpiration: false,
       // CRITICAL: Get the secret key from environment variables (e.g., in a ConfigService)
-      secretOrKey: configService.get('JWT_SECRET'),
+      secretOrKey: configService.get('ACCESS_TOKEN_SECRET'),
     });
   }
 
-  // This method is called after token validation (signature and expiration)
-  // The payload contains the decoded JWT data
-  async validate(payload: any) {
-    // The request object will now contain the user object: req.user
-    // We attach the critical identity and tenant scope data here.
+  validate(payload: any) {
     return {
       userId: payload.sub,
       email: payload.email,
-      organizationId: payload.orgId, // The essential tenant context
-      role: payload.role,
+      organizationId: payload.orgId,
+      permissions: payload.permissions,
     };
   }
 }
