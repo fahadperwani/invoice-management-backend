@@ -61,11 +61,10 @@ export class AuthService {
       });
 
       // 4. Create Organization (Tenant Instance)
-      const newOrg = queryRunner.manager.create(Organization, {
+      const newOrg = await queryRunner.manager.save(Organization, {
         name: dto.organizationName,
         slug: orgSlug,
       });
-      await queryRunner.manager.save(newOrg);
 
       const adminRole = await queryRunner.manager.save(Role, {
         organizationId: newOrg.id,
@@ -103,6 +102,7 @@ export class AuthService {
       };
     } catch (err) {
       await queryRunner.rollbackTransaction();
+      console.log(err);
 
       if (err instanceof Error) {
         // Check for unique constraint violation error code (PostgreSQL standard is '23505')

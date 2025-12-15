@@ -6,6 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
+import { Role } from '../../organizations/entities/role.entity';
 import { Permission } from './permission.entity';
 
 @Entity('role_permissions')
@@ -20,7 +21,12 @@ export class RolePermission {
   @Column({ name: 'permission_id' })
   permissionId: string;
 
-  @ManyToOne(() => Permission)
+  // --- Relations ---
+  @ManyToOne(() => Role, (role) => role.rolePermissions)
+  @JoinColumn({ name: 'role_id' })
+  role: Role;
+
+  @ManyToOne(() => Permission, (permission) => permission.rolePermissions)
   @JoinColumn({ name: 'permission_id' })
-  permission: Permission;
+  permission: Permission; // <-- CRITICAL for fetching permission names
 }

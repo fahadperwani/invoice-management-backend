@@ -1,48 +1,41 @@
 import {
   Entity,
-  Column,
-  Unique,
-  CreateDateColumn,
-  UpdateDateColumn,
   PrimaryGeneratedColumn,
+  Column,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
+import { User } from '../../users/entities/user.entity';
+import { Organization } from './organization.entity';
 import { Role } from './role.entity';
 
 @Entity('user_organizations')
-@Unique(['userId', 'organizationId']) // Use property names, not column names
 export class UserOrganization {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  // IMPORTANT: Matches column names and is not decorated as a relation here
   @Column({ name: 'user_id' })
   userId: string;
 
-  // IMPORTANT: Matches column names and is not decorated as a relation here
   @Column({ name: 'organization_id' })
   organizationId: string;
 
-  @Column({
-    type: 'text',
-    // The status options are defined by your SQL CHECK constraint
-  })
-  status: 'invited' | 'active' | 'disabled';
-
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
-
-  @Column({ name: 'role_id', nullable: true })
+  @Column({ name: 'role_id' }) // <-- The Foreign Key to the Role entity
   roleId: string;
 
-  // ----------------------------------------------------------------------
-  // NEW: Define the ManyToOne Relation to the Role entity
-  // ----------------------------------------------------------------------
-  @ManyToOne(() => Role)
-  @JoinColumn({ name: 'role_id' }) // Maps the 'role_id' column to the Role entity
-  role: Role; // This property is what TypeORM loads when relations: ['role'] is used
+  @Column({ default: 'active' }) // e.g., 'active', 'disabled', 'invited'
+  status: string;
+
+  // --- Relations ---
+  @ManyToOne(() => User, (user) => user.memberships)
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @ManyToOne(() => Organization, (org) => org.memberships)
+  @JoinColumn({ name: 'organization_id' })
+  organization: Organization;
+
+  @ManyToOne(() => Role, (role) => role.userOrganizations) // Assuming inverse is set in Role
+  @JoinColumn({ name: 'role_id' })
+  role: Role; // <-- This lets us fetch the Role details
 }
