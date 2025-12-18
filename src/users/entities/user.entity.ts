@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
 import { UserOrganization } from '../../organizations/entities/user-organization.entity';
+import { Permission } from 'src/permissions/entities/permission.entity';
 
 @Entity('users')
 export class User {
