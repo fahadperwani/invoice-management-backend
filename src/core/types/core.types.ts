@@ -4,3 +4,8 @@ export type JwtPayload = {
   orgId: string;
   permissions: string[];
 };
+
+export interface AuthenticatedRequest extends Request {
+  token: string;
+  payload: JwtPayload;
+}

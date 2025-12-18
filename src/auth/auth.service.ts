@@ -25,7 +25,6 @@ import {
   RegisterTenantResponse,
 } from './types/auth.types';
 import { RedisService } from 'src/redis/redis.service';
-import { JwtPayload } from 'src/core/types/core.types';
 
 @Injectable()
 export class AuthService {
@@ -89,6 +88,7 @@ export class AuthService {
         userId: newUser.id,
         organizationId: newOrg.id,
         status: 'active',
+        roleId: adminRole.id,
       });
       await queryRunner.manager.save(membership);
 

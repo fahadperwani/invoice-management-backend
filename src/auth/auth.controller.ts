@@ -4,22 +4,24 @@ import {
   HttpCode,
   HttpStatus,
   Post,
-  Request,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterTenantDto } from './dto/register-tenant.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtService } from '@nestjs/jwt';
-import { JwtPayload } from 'src/core/types/core.types';
+import { AuthenticatedRequest } from 'src/core/types/core.types';
 import { JwtAuthGuard } from 'src/core/auth/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Post('register-tenant')
@@ -40,20 +42,21 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   async refreshTokens(
+    @Req() req: AuthenticatedRequest,
     @Body('refreshToken') refreshToken: string,
   ): Promise<any> {
-    const payload: JwtPayload = this.jwtService.verify(refreshToken);
+    const { sub } = req.payload;
 
-    return this.authService.refreshTokens(payload.sub, refreshToken);
+    return this.authService.refreshTokens(sub, refreshToken);
   }
 
   @ApiBearerAuth('access-token')
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async logout(@Request() req): Promise<any> {
+  async logout(@Req() req: AuthenticatedRequest): Promise<any> {
     const token: string = req.token;
-    const user: string = req.user;
+    const { sub: user } = req.payload;
 
     if (!token || !user) {
       throw new Error('Invalid token or user');
