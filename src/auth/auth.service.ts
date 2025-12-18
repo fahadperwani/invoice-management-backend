@@ -24,12 +24,15 @@ import {
   LoginResponse,
   RegisterTenantResponse,
 } from './types/auth.types';
+import { RedisService } from 'src/redis/redis.service';
+import { JwtPayload } from 'src/core/types/core.types';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly jwtService: JwtService,
+    private readonly redisService: RedisService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -102,7 +105,6 @@ export class AuthService {
       };
     } catch (err) {
       await queryRunner.rollbackTransaction();
-      console.log(err);
 
       if (err instanceof Error) {
         // Check for unique constraint violation error code (PostgreSQL standard is '23505')
@@ -145,7 +147,7 @@ export class AuthService {
   /**
    * Helper function to generate both Access and Refresh tokens.
    */
-  private generateTokens(payload: AuthTokenPayload): AuthTokens {
+  private async generateTokens(payload: AuthTokenPayload): Promise<AuthTokens> {
     // 1. ACCESS TOKEN (Uses the JwtModule default config: JWT_ACCESS_SECRET)
     const accessToken = this.jwtService.sign(payload); // No extra options needed, uses module defaults
 
@@ -158,7 +160,13 @@ export class AuthService {
       },
     );
 
-    // TODO: Hash and store the Refresh Token in the 'sessions' table here!
+    // Store tokens in Redis
+    await this.redisService.setAccessToken(payload.sub, accessToken, 3600000); // 1 hour
+    await this.redisService.setRefreshToken(
+      payload.sub,
+      refreshToken,
+      604800000,
+    ); // 7 days
 
     return { accessToken, refreshToken };
   }
@@ -197,7 +205,7 @@ export class AuthService {
       permissions: permissions, // User permissions within the tenant
     };
 
-    const { accessToken, refreshToken } = this.generateTokens(payload);
+    const { accessToken, refreshToken } = await this.generateTokens(payload);
 
     // 3. Generate the token
     const authUser: AuthUser = {
@@ -207,5 +215,45 @@ export class AuthService {
     };
 
     return { accessToken, refreshToken, user: authUser };
+  }
+
+  async logout(token: string, userId: string) {
+    // Delete tokens from Redis
+    await this.redisService.deleteToken(userId);
+
+    // Optionally blacklist the token
+    await this.redisService.blacklistToken(token, 3600000);
+
+    return { message: 'Logged out successfully' };
+  }
+
+  async refreshTokens(
+    userId: string,
+    refreshToken: string,
+  ): Promise<AuthTokens> {
+    // 1. Verify the provided refresh token
+    try {
+      const storedRefreshToken =
+        await this.redisService.getRefreshToken(userId);
+
+      if (storedRefreshToken !== refreshToken) {
+        throw new UnauthorizedException('Invalid refresh token.');
+      }
+
+      const payload = this.jwtService.verify<AuthTokenPayload>(refreshToken, {
+        secret: this.configService.get('JWT_REFRESH_SECRET'),
+      });
+
+      // 2. Generate new tokens
+      const { accessToken, refreshToken: newRefreshToken } =
+        await this.generateTokens(payload);
+
+      return { accessToken, refreshToken: newRefreshToken };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'TokenExpiredError') {
+        throw new UnauthorizedException('Refresh token has expired.');
+      }
+      throw new UnauthorizedException('Invalid refresh token.');
+    }
   }
 }

@@ -1,6 +1,53 @@
-import { Injectable } from '@nestjs/common';
+// jwt-auth.guard.ts
+import {
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { RedisService } from '../../redis/redis.service';
+import { JwtPayload } from '../types/core.types';
+import { JwtService } from '@nestjs/jwt';
 
-@Injectable()
-// 'jwt' must match the name used in PassportStrategy (default is 'jwt')
-export class JwtAuthGuard extends AuthGuard('jwt') {}
+@Injectable({})
+export class JwtAuthGuard extends AuthGuard('jwt') {
+  constructor(
+    private redisService: RedisService,
+    private readonly jwtService: JwtService,
+  ) {
+    super();
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const canActivate = await super.canActivate(context);
+
+    if (!canActivate) {
+      return false;
+    }
+
+    const request: Request = context.switchToHttp().getRequest();
+    const token = this.extractTokenFromHeader(request);
+
+    if (!token) {
+      throw new UnauthorizedException('No token provided');
+    }
+
+    // Check if token is blacklisted
+    const isBlacklisted = await this.redisService.isTokenBlacklisted(token);
+    if (isBlacklisted) {
+      throw new UnauthorizedException('Token has been revoked');
+    }
+
+    request['token'] = token;
+
+    const payload: JwtPayload = this.jwtService.decode(token);
+
+    request['user'] = payload.sub;
+    return true;
+  }
+
+  private extractTokenFromHeader(request: any): string | null {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
+    return type === 'Bearer' ? token : null;
+  }
+}
