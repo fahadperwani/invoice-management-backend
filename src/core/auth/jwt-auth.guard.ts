@@ -8,6 +8,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RedisService } from '../../redis/redis.service';
 import { JwtPayload } from '../types/core.types';
 import { JwtService } from '@nestjs/jwt';
+import { Request } from 'express';
 
 @Injectable({})
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -42,11 +43,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     const payload: JwtPayload = this.jwtService.decode(token);
 
-    request['user'] = payload.sub;
+    request['payload'] = payload;
     return true;
   }
 
-  private extractTokenFromHeader(request: any): string | null {
+  private extractTokenFromHeader(request: Request): string | null {
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     return type === 'Bearer' ? token : null;
   }
