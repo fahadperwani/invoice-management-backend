@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PERMISSIONS_KEY } from './permissions.decorator'; // Import the key
-import { User } from 'src/users/entities/user.entity';
+import { JwtPayload } from '../types/core.types';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -31,7 +31,7 @@ export class PermissionsGuard implements CanActivate {
     // 2. Extract the request object and user data
     const request = context.switchToHttp().getRequest();
     // The 'user' object is attached to the request by the JwtStrategy
-    const user = request.user;
+    const user: JwtPayload = request.user;
 
     // Safety check: If JwtAuthGuard failed to attach a user, deny access.
     // (This is often redundant if JwtAuthGuard runs first, but is good defensive coding).
